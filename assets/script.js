@@ -5,6 +5,7 @@ const pasesViaURL = params.get('p');
 const tipoViaURL = params.get('t');
 
 const STORAGE_RSVP_KEY = 'boda_rsvp_confirmaciones';
+const STORAGE_RSVP_CHANGES_KEY = 'boda_rsvp_cambios';
 const STORAGE_GUESTS_KEY = 'boda_invitados_locales';
 
 let invitadoActual = {
@@ -76,6 +77,30 @@ function guardarConfirmacionLocal(registro) {
     localStorage.setItem(STORAGE_RSVP_KEY, JSON.stringify(confirmaciones));
 }
 
+function obtenerCambiosRSVP() {
+    try {
+        const data = JSON.parse(localStorage.getItem(STORAGE_RSVP_CHANGES_KEY) || '{}');
+        return data && typeof data === 'object' ? data : {};
+    } catch {
+        return {};
+    }
+}
+
+function obtenerCambiosRSVPPorInvitado(invitadoIdValue) {
+    const cambios = obtenerCambiosRSVP();
+    const key = String(invitadoIdValue || 'general');
+    return Number(cambios[key] || 0);
+}
+
+function incrementarCambiosRSVPPorInvitado(invitadoIdValue) {
+    const cambios = obtenerCambiosRSVP();
+    const key = String(invitadoIdValue || 'general');
+    const actual = Number(cambios[key] || 0);
+    cambios[key] = actual + 1;
+    localStorage.setItem(STORAGE_RSVP_CHANGES_KEY, JSON.stringify(cambios));
+    return cambios[key];
+}
+
 function actualizarEstadoRSVP(mensaje, isError = false) {
     const estado = document.getElementById('rsvp-estado');
     if(!estado) return;
@@ -92,23 +117,48 @@ function inicializarRSVP() {
     const previoLocal = obtenerConfirmacionesLocales().find((item) => item.invitadoId === invitadoActual.id);
     
     const btnReset = document.getElementById('btn-reset-rsvp');
+    const avisoCambio = document.getElementById('rsvp-cambio-aviso');
+    let cambiosUsados = obtenerCambiosRSVPPorInvitado(invitadoActual.id);
+
+    const actualizarAvisoCambio = () => {
+        if (!avisoCambio) return;
+        if (cambiosUsados >= 1) {
+            avisoCambio.classList.remove('hidden');
+        } else {
+            avisoCambio.classList.add('hidden');
+        }
+    };
+    actualizarAvisoCambio();
 
     // Función para bloquear botones
     const bloquearBotones = (status) => {
         actualizarEstadoRSVP(`Ya registramos tu respuesta: ${status.toUpperCase().replace('_', ' ')}. Gracias.`);
         btnSi.disabled = true; btnNo.disabled = true;
         btnSi.style.opacity = '0.5'; btnNo.style.opacity = '0.5';
-        if (btnReset) btnReset.classList.remove('hidden');
+        if (btnReset && cambiosUsados < 1) {
+            btnReset.classList.remove('hidden');
+        } else if (btnReset) {
+            btnReset.classList.add('hidden');
+        }
+        actualizarAvisoCambio();
     };
 
     if (btnReset) {
         btnReset.addEventListener('click', () => {
+            if (cambiosUsados >= 1) {
+                actualizarEstadoRSVP('Ya utilizaste tu unico cambio de respuesta.', true);
+                btnReset.classList.add('hidden');
+                return;
+            }
+
             const confirmaciones = obtenerConfirmacionesLocales().filter(item => item.invitadoId !== invitadoActual.id);
             localStorage.setItem(STORAGE_RSVP_KEY, JSON.stringify(confirmaciones));
+            cambiosUsados = incrementarCambiosRSVPPorInvitado(invitadoActual.id);
             btnSi.disabled = false; btnNo.disabled = false;
             btnSi.style.opacity = '1'; btnNo.style.opacity = '1';
             document.getElementById('rsvp-estado').innerText = '';
             btnReset.classList.add('hidden');
+            actualizarAvisoCambio();
         });
     }
 
@@ -173,6 +223,8 @@ function inicializarRSVP() {
             actualizarEstadoRSVP('Enviando tu respuesta...', false);
             btnSi.disabled = true; btnNo.disabled = true;
             btnSi.style.opacity = '0.5'; btnNo.style.opacity = '0.5';
+            if (btnReset && cambiosUsados < 1) btnReset.classList.remove('hidden');
+            if (btnReset && cambiosUsados >= 1) btnReset.classList.add('hidden');
             
             try {
                 // Se envía el POST a la URL de Google Apps Script. 
@@ -194,6 +246,8 @@ function inicializarRSVP() {
             actualizarEstadoRSVP('Gracias por confirmar. Tu respuesta fue guardada localmente.');
             btnSi.disabled = true; btnNo.disabled = true;
             btnSi.style.opacity = '0.5'; btnNo.style.opacity = '0.5';
+            if (btnReset && cambiosUsados < 1) btnReset.classList.remove('hidden');
+            if (btnReset && cambiosUsados >= 1) btnReset.classList.add('hidden');
         }
     };
 
