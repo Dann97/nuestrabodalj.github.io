@@ -26,7 +26,13 @@ let currentIndex = 0;
 
 // Config and Data Load
 function obtenerConfig() {
-    const defaultConfig = { showGiftData: false, giftCard: 'XXXX XXXX XXXX XXXX', giftClabe: 'XXXXXXXXXXXXXXXXXX' };
+    const defaultConfig = {
+        showGiftData: false,
+        giftCard: 'XXXX XXXX XXXX XXXX',
+        giftClabe: 'XXXXXXXXXXXXXXXXXX',
+        enableRsvpSync: false,
+        persistRsvpLock: false
+    };
     return window.BODA_CONFIG ? { ...defaultConfig, ...window.BODA_CONFIG } : defaultConfig;
 }
 
@@ -89,6 +95,7 @@ function inicializarRSVP() {
     const btnNo = document.getElementById('btn-no');
     if(!btnSi || !btnNo) return;
     
+    const config = obtenerConfig();
     const previoLocal = obtenerConfirmacionesLocales().find((item) => item.invitadoId === invitadoActual.id);
     
     // Función para bloquear botones
@@ -98,13 +105,12 @@ function inicializarRSVP() {
         btnSi.style.opacity = '0.5'; btnNo.style.opacity = '0.5';
     };
 
-    if (previoLocal) {
+    if (previoLocal && config.persistRsvpLock) {
         bloquearBotones(previoLocal.estado);
     }
 
     // Sincronizar con el servidor para evitar duplicados si se cambió de dispositivo/caché
-    const config = obtenerConfig();
-    if (config.rsvpEndpoint) {
+    if (config.rsvpEndpoint && config.enableRsvpSync) {
         fetch(config.rsvpEndpoint)
             .then(response => response.json())
             .then(data => {
