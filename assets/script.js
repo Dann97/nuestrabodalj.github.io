@@ -26,13 +26,7 @@ let currentIndex = 0;
 
 // Config and Data Load
 function obtenerConfig() {
-    const defaultConfig = {
-        showGiftData: false,
-        giftCard: 'XXXX XXXX XXXX XXXX',
-        giftClabe: 'XXXXXXXXXXXXXXXXXX',
-        enableRsvpSync: false,
-        persistRsvpLock: false
-    };
+    const defaultConfig = { showGiftData: false, giftCard: 'XXXX XXXX XXXX XXXX', giftClabe: 'XXXXXXXXXXXXXXXXXX' };
     return window.BODA_CONFIG ? { ...defaultConfig, ...window.BODA_CONFIG } : defaultConfig;
 }
 
@@ -95,22 +89,36 @@ function inicializarRSVP() {
     const btnNo = document.getElementById('btn-no');
     if(!btnSi || !btnNo) return;
     
-    const config = obtenerConfig();
     const previoLocal = obtenerConfirmacionesLocales().find((item) => item.invitadoId === invitadoActual.id);
     
+    const btnReset = document.getElementById('btn-reset-rsvp');
+
     // Función para bloquear botones
     const bloquearBotones = (status) => {
         actualizarEstadoRSVP(`Ya registramos tu respuesta: ${status.toUpperCase().replace('_', ' ')}. Gracias.`);
         btnSi.disabled = true; btnNo.disabled = true;
         btnSi.style.opacity = '0.5'; btnNo.style.opacity = '0.5';
+        if (btnReset) btnReset.classList.remove('hidden');
     };
 
-    if (previoLocal && config.persistRsvpLock) {
+    if (btnReset) {
+        btnReset.addEventListener('click', () => {
+            const confirmaciones = obtenerConfirmacionesLocales().filter(item => item.invitadoId !== invitadoActual.id);
+            localStorage.setItem(STORAGE_RSVP_KEY, JSON.stringify(confirmaciones));
+            btnSi.disabled = false; btnNo.disabled = false;
+            btnSi.style.opacity = '1'; btnNo.style.opacity = '1';
+            document.getElementById('rsvp-estado').innerText = '';
+            btnReset.classList.add('hidden');
+        });
+    }
+
+    if (previoLocal) {
         bloquearBotones(previoLocal.estado);
     }
 
     // Sincronizar con el servidor para evitar duplicados si se cambió de dispositivo/caché
-    if (config.rsvpEndpoint && config.enableRsvpSync) {
+    const config = obtenerConfig();
+    if (config.rsvpEndpoint) {
         fetch(config.rsvpEndpoint)
             .then(response => response.json())
             .then(data => {
@@ -118,16 +126,28 @@ function inicializarRSVP() {
                     const currentId = String(invitadoActual.id);
                     const currentNombre = String(invitadoActual.nombre || '').toLowerCase().trim();
                     
-                    const matchesServer = data.find(item => {
-                        const rowId = String(item.invitadoId);
-                        const rowNombre = String(item.nombre || '').toLowerCase().trim();
-                        // Mismo ID o mismo nombre (si somos general)
-                        if (currentId !== 'general' && rowId === currentId) return true;
-                        if (currentId === 'general' && rowNombre === currentNombre && currentNombre !== '') return true;
-                        return false;
-                    });
+                    const matches = data
+                        .map((item, index) => ({ item, index }))
+                        .filter(({ item }) => {
+                            const rowId = String(item.invitadoId);
+                            const rowNombre = String(item.nombre || '').toLowerCase().trim();
+                            // Mismo ID o mismo nombre (si somos general)
+                            if (currentId !== 'general' && rowId === currentId) return true;
+                            if (currentId === 'general' && rowNombre === currentNombre && currentNombre !== '') return true;
+                            return false;
+                        });
 
-                    if (matchesServer) {
+                    if (matches.length) {
+                        const matchesServer = matches
+                            .slice()
+                            .sort((a, b) => {
+                                const timeA = Date.parse(a.item.fecha || a.item.timestamp || '') || 0;
+                                const timeB = Date.parse(b.item.fecha || b.item.timestamp || '') || 0;
+                                if (timeA !== timeB) return timeA - timeB;
+                                return a.index - b.index;
+                            })
+                            .at(-1).item;
+
                         guardarConfirmacionLocal(matchesServer);
                         bloquearBotones(matchesServer.estado);
                     }
